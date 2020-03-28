@@ -45,6 +45,8 @@ ext {
     scalaBinaryVersion = '2.12'
     slf4jVersion = '1.7.15'
     log4jVersion = '1.2.17'
+    junitVersion = '4.12'
+    mockitoVersion = '2.21.0'
 }
 
 
@@ -85,6 +87,12 @@ dependencies {
     compile "org.apache.flink:flink-runtime-web_${scalaBinaryVersion}:${flinkVersion}"
     compile "org.apache.flink:flink-runtime_${scalaBinaryVersion}:${flinkVersion}"
     compile "org.apache.flink:flink-streaming-java_${scalaBinaryVersion}:${flinkVersion}"
+
+    testCompile "org.apache.flink:flink-runtime_${scalaBinaryVersion}:${flinkVersion}:tests"
+    testCompile "org.apache.flink:flink-streaming-java_${scalaBinaryVersion}:${flinkVersion}:tests"
+    testCompile "org.apache.flink:flink-test-utils-junit:${flinkVersion}"
+    testCompile "junit:junit:${junitVersion}"
+    testCompile "org.mockito:mockito-core:${mockitoVersion}"
 
     compile "log4j:log4j:${log4jVersion}"
     compile "org.slf4j:slf4j-log4j12:${slf4jVersion}"
