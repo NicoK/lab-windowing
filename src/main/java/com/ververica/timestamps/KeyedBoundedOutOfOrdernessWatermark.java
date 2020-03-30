@@ -90,8 +90,8 @@ public class KeyedBoundedOutOfOrdernessWatermark implements Function {
     ensureWatermarkCached(ctx);
     if (potentialWM >= lastWatermark) {
       lastWatermark = potentialWM;
+      watermark.update(lastWatermark);
     }
-    watermark.update(lastWatermark);
     invalidateWatermarkCache();
   }
 
