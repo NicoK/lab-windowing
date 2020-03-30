@@ -96,6 +96,8 @@ public class AggregatingWindowWithProcessFunction<Key, IN, OUT, ACC, ACC_OUT>
 
   @Override
   public void processElement(IN value, Context ctx, Collector<OUT> out) throws Exception {
+    setWindowContext(ctx);
+
     long currentTimestamp = ctx.timestamp();
     long currentWatermark = ctx.timerService().currentWatermark();
     Collection<TimeWindow> windows =
@@ -297,14 +299,18 @@ public class AggregatingWindowWithProcessFunction<Key, IN, OUT, ACC, ACC_OUT>
                     "WindowAggregate",
                     Types.LONG,
                     Types.TUPLE(Types.LONG, windowAggregateFunction.getAccumulatorType())));
+  }
 
-    windowAssignerContext =
-        new WindowAssignerContext() {
-          @Override
-          public long getCurrentProcessingTime() {
-            return System.currentTimeMillis();
-          }
-        };
+  private void setWindowContext(final Context ctx) {
+    if (windowAssignerContext == null) {
+      windowAssignerContext =
+          new WindowAssignerContext() {
+            @Override
+            public long getCurrentProcessingTime() {
+              return ctx.timerService().currentProcessingTime();
+            }
+          };
+    }
   }
 
   @SuppressWarnings({"unused", "UnusedReturnValue"})

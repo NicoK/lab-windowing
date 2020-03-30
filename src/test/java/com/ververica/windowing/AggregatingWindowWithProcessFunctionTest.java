@@ -405,7 +405,7 @@ public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
             new WindowAssigner.WindowAssignerContext() {
               @Override
               public long getCurrentProcessingTime() {
-                return System.currentTimeMillis();
+                return testHarness.getProcessingTime();
               }
             });
     TimeWindow window = Iterables.getOnlyElement(windows);
