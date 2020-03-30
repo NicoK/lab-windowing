@@ -114,26 +114,32 @@ public class AggregatingWindowWithProcessFunction<Key, IN, OUT, ACC, ACC_OUT>
 
       long stateKey = windowToStateKey(window);
       Tuple2<Long, ACC> stateEntry = windowState.get(stateKey);
-      if (stateEntry == null) {
+      boolean firstInWindow = stateEntry == null;
+      if (firstInWindow) {
         stateEntry = Tuple2.of(window.getStart(), windowAggregateFunction.createAccumulator());
       }
       stateEntry.f1 = windowAggregateFunction.add(value, stateEntry.f1);
       windowState.put(stateKey, stateEntry);
 
+      boolean cleanupTimerNeeded = firstInWindow && allowedLateness > 0;
       if (window.maxTimestamp() <= currentWatermark) {
         // event within allowed lateness
         emitWindowContents(out, window, stateEntry.f1, ctx);
 
         if (windowFireMode.isPurge()) {
           windowState.remove(stateKey);
+        } else {
+          cleanupTimerNeeded = firstInWindow;
         }
-      } else {
-        // note: timers will be de-duplicated (no need to check here)
+      } else if (firstInWindow) {
+        // only register once (avoid state access)
         registerRegularEndTimer(window, ctx);
       }
 
-      // note: timers will be de-duplicated (no need to check here)
-      registerCleanupTimer(window, ctx);
+      if (cleanupTimerNeeded) {
+        // only register once (avoid state access)
+        registerCleanupTimer(window, ctx);
+      }
     }
 
     // side output input event if
