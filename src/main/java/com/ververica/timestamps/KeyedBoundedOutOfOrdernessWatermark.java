@@ -6,6 +6,7 @@ import org.apache.flink.api.common.functions.RuntimeContext;
 import org.apache.flink.api.common.state.ValueState;
 import org.apache.flink.api.common.state.ValueStateDescriptor;
 import org.apache.flink.api.common.typeinfo.Types;
+import org.apache.flink.metrics.Gauge;
 import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
 import org.apache.flink.streaming.api.functions.KeyedProcessFunction.Context;
 import org.apache.flink.streaming.api.functions.timestamps.BoundedOutOfOrdernessTimestampExtractor;
@@ -28,6 +29,9 @@ public class KeyedBoundedOutOfOrdernessWatermark implements Function {
 
   /** The timestamp of the last emitted watermark. */
   private Long lastWatermark = null;
+
+  /** The currently lowest watermark among all keys of this instance. */
+  private transient Long currentLowWatermark = 0L;
 
   /**
    * The (fixed) interval between the maximum seen timestamp seen in the records and that of the
@@ -56,6 +60,8 @@ public class KeyedBoundedOutOfOrdernessWatermark implements Function {
 
   public void init(RuntimeContext ctx) {
     watermark = ctx.getState(new ValueStateDescriptor<>("KeyedWatermark", Types.LONG));
+
+    ctx.getMetricGroup().gauge("currentLowWatermark", (Gauge<Long>) () -> currentLowWatermark);
   }
 
   /**
@@ -91,6 +97,9 @@ public class KeyedBoundedOutOfOrdernessWatermark implements Function {
     Long currentWatermark = getWatermarkCached(ctx);
     if (potentialWM >= currentWatermark) {
       currentWatermark = potentialWM;
+      if (currentWatermark >= currentLowWatermark) {
+        currentLowWatermark = currentWatermark;
+      }
       watermark.update(currentWatermark);
     }
     invalidateWatermarkCache();
