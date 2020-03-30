@@ -7,6 +7,7 @@ import org.apache.flink.api.common.state.ValueState;
 import org.apache.flink.api.common.state.ValueStateDescriptor;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
+import org.apache.flink.streaming.api.functions.KeyedProcessFunction.Context;
 import org.apache.flink.streaming.api.functions.timestamps.BoundedOutOfOrdernessTimestampExtractor;
 import org.apache.flink.streaming.api.windowing.time.Time;
 
@@ -26,7 +27,7 @@ public class KeyedBoundedOutOfOrdernessWatermark implements Function {
   private static final long serialVersionUID = 1L;
 
   /** The timestamp of the last emitted watermark. */
-  private long lastWatermark = Long.MIN_VALUE;
+  private Long lastWatermark = null;
 
   /**
    * The (fixed) interval between the maximum seen timestamp seen in the records and that of the
@@ -35,6 +36,7 @@ public class KeyedBoundedOutOfOrdernessWatermark implements Function {
   private final long maxOutOfOrderness;
 
   private transient ValueState<Long> watermark;
+  private Object lastKey;
 
   public KeyedBoundedOutOfOrdernessWatermark(Time maxOutOfOrderness) {
     if (maxOutOfOrderness.toMilliseconds() < 0) {
@@ -61,24 +63,61 @@ public class KeyedBoundedOutOfOrdernessWatermark implements Function {
    *
    * <p>This method can only be called in code where Flink state can be accessed.
    *
+   * @param ctx ProcessFunction context
    * @return the current watermark for the context's key
+   * @throws IOException if the watermark cannot be retrieved
    */
-  public final Long getCurrentWatermark() throws IOException {
+  public final Long getCurrentWatermark(Context ctx) throws IOException {
     Long currentWatermark = watermark.value();
     if (currentWatermark == null) {
       currentWatermark = Long.MIN_VALUE;
     }
+    cacheWatermark(ctx, currentWatermark);
     return currentWatermark;
   }
 
-  public final void updateCurrentWatermark(KeyedProcessFunction<?, ?, ?>.Context ctx)
-      throws IOException {
+  /**
+   * Updates the per-key watermark (after processing; or at least after retrieving the watermark
+   * with {@link #getCurrentWatermark(Context)}!).
+   *
+   * @param ctx ProcessFunction context
+   * @throws IOException if the watermark cannot be updated
+   */
+  public final void updateCurrentWatermark(Context ctx) throws IOException {
     long timestamp = ctx.timestamp();
     // this guarantees that the watermark never goes backwards.
     long potentialWM = timestamp - maxOutOfOrderness;
+    ensureWatermarkCached(ctx);
     if (potentialWM >= lastWatermark) {
       lastWatermark = potentialWM;
     }
     watermark.update(lastWatermark);
+    invalidateWatermarkCache();
+  }
+
+  /**
+   * Caches the current watermark (and the key for validation) so that we do not need to access
+   * state again (may be slow if RocksDB is used).
+   *
+   * @param ctx ProcessFunction context
+   * @param currentWatermark the current watermark for the context's key
+   */
+  private void cacheWatermark(Context ctx, Long currentWatermark) {
+    lastWatermark = currentWatermark;
+    lastKey = ctx.getCurrentKey();
+  }
+
+  private void ensureWatermarkCached(Context ctx) throws IOException {
+    if (lastWatermark == null || lastKey != ctx.getCurrentKey()) {
+      getCurrentWatermark(ctx);
+    }
+  }
+
+  /**
+   * Invalidates the watermark cache to allow early GC.
+   */
+  private void invalidateWatermarkCache() {
+    lastWatermark = null;
+    lastKey = null;
   }
 }

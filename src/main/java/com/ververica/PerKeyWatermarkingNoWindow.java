@@ -80,7 +80,7 @@ public class PerKeyWatermarkingNoWindow {
                       Context ctx,
                       Collector<Tuple3<Long, String, Long>> out)
                       throws IOException {
-                    Long currentWatermark = watermark.getCurrentWatermark();
+                    Long currentWatermark = watermark.getCurrentWatermark(ctx);
 
                     Tuple3<Long, String, Long> output =
                         Tuple3.of(value.f0, value.f1, currentWatermark);
