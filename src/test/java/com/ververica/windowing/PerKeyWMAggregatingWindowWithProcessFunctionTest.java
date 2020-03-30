@@ -19,7 +19,9 @@
 package com.ververica.windowing;
 
 import static org.apache.flink.util.Preconditions.checkArgument;
+import static org.junit.Assert.assertEquals;
 
+import com.ververica.timestamps.KeyedBoundedOutOfOrdernessWatermark;
 import java.io.Serializable;
 import java.util.Collection;
 import java.util.Comparator;
@@ -51,10 +53,10 @@ import org.junit.Assert;
 import org.junit.Test;
 
 /**
- * Tests for {@link AggregatingWindowWithProcessFunction}, copied and adapted from {@link
+ * Tests for {@link PerKeyWMAggregatingWindowWithProcessFunction}, copied and adapted from {@link
  * org.apache.flink.streaming.runtime.operators.windowing.WindowOperatorTest}.
  */
-public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
+public class PerKeyWMAggregatingWindowWithProcessFunctionTest extends TestLogger {
 
   private static final TypeInformation<Tuple2<String, Integer>> STRING_INT_TUPLE =
       Types.TUPLE(Types.STRING, Types.INT);
@@ -68,14 +70,15 @@ public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
     final int windowSize = 3;
     final int windowSlide = 1;
 
-    AggregatingWindowWithProcessFunction<
+    PerKeyWMAggregatingWindowWithProcessFunction<
             String,
             Tuple2<String, Integer>,
             Tuple2<String, Integer>,
             Tuple2<String, Integer>,
             Tuple2<String, Integer>>
         processFunction =
-            new AggregatingWindowWithProcessFunction<>(
+            new PerKeyWMAggregatingWindowWithProcessFunction<>(
+                new KeyedBoundedOutOfOrdernessWatermark(Time.milliseconds(1000L)),
                 SlidingEventTimeWindows.of(
                     Time.of(windowSize, TimeUnit.SECONDS), Time.of(windowSlide, TimeUnit.SECONDS)),
                 new SumAggregator(),
@@ -90,33 +93,37 @@ public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
     ConcurrentLinkedQueue<Object> expectedOutput = new ConcurrentLinkedQueue<>();
 
     // add elements out-of-order
-    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 3999));
-    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 3000));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 3999)); // wm2: 2999
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 3000)); // wm2: 2999
 
-    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 20));
-    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 0));
-    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 999));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 20)); //   wm1: -980
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 0)); //    wm1: -980
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 999)); //  wm1:   -1
 
-    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1998));
-    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1999));
-    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1000));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1998)); // wm2: 2999
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1999)); // wm2: 2999
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1000)); // wm2: 2999
+    compareOutput(testHarness, expectedOutput);
 
-    testHarness.processWatermark(new Watermark(999));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 1999)); // wm1:  999
     expectedOutput.add(new StreamRecord<>(new Tuple2<>("key1", 3), 999));
-    expectedOutput.add(new Watermark(999));
+    compareOutput(testHarness, expectedOutput);
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1999)); // wm2: 2999
     compareOutput(testHarness, expectedOutput);
 
-    testHarness.processWatermark(new Watermark(1999));
-    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key1", 3), 1999));
-    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key2", 3), 1999));
-    expectedOutput.add(new Watermark(1999));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 2999)); // wm1: 1999
+    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key1", 4), 1999));
+    compareOutput(testHarness, expectedOutput);
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 2999)); // wm2: 2999
     compareOutput(testHarness, expectedOutput);
 
-    testHarness.processWatermark(new Watermark(2999));
-    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key1", 3), 2999));
-    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key2", 3), 2999));
-    expectedOutput.add(new Watermark(2999));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 3999)); // wm1: 2999
+    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key1", 5), 2999));
     compareOutput(testHarness, expectedOutput);
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 3999)); // wm2: 2999
+    compareOutput(testHarness, expectedOutput);
+
+    assertEquals(0, testHarness.numEventTimeTimers());
 
     // do a snapshot, close and restore again
     OperatorSubtaskState snapshot = testHarness.snapshot(0L, 0L);
@@ -128,28 +135,58 @@ public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
     testHarness.initializeState(snapshot);
     testHarness.open();
 
-    testHarness.processWatermark(new Watermark(3999));
-    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key2", 5), 3999));
-    expectedOutput.add(new Watermark(3999));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 4999)); // wm1: 3999
+    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key1", 3), 3999));
+    compareOutput(testHarness, expectedOutput);
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 4999)); // wm2: 3999
+    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key2", 8), 3999));
     compareOutput(testHarness, expectedOutput);
 
-    testHarness.processWatermark(new Watermark(4999));
-    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key2", 2), 4999));
-    expectedOutput.add(new Watermark(4999));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 5999)); // wm1: 4999
+    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key1", 3), 4999));
+    compareOutput(testHarness, expectedOutput);
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 5999)); // wm2: 4999
+    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key2", 5), 4999));
     compareOutput(testHarness, expectedOutput);
 
-    testHarness.processWatermark(new Watermark(5999));
-    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key2", 2), 5999));
-    expectedOutput.add(new Watermark(5999));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 6999)); // wm1: 5999
+    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key1", 3), 5999));
+    compareOutput(testHarness, expectedOutput);
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 6999)); // wm2: 5999
+    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key2", 5), 5999));
     compareOutput(testHarness, expectedOutput);
 
-    // those don't have any effect...
-    testHarness.processWatermark(new Watermark(6999));
-    testHarness.processWatermark(new Watermark(7999));
-    expectedOutput.add(new Watermark(6999));
-    expectedOutput.add(new Watermark(7999));
-
+    // none of the initial elements anymore
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 7999)); // wm1: 6999
+    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key1", 3), 6999));
     compareOutput(testHarness, expectedOutput);
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 7999)); // wm2: 6999
+    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key2", 3), 6999));
+    compareOutput(testHarness, expectedOutput);
+
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 10999)); // wm1: 9999
+    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key1", 3), 7999));
+    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key1", 2), 8999));
+    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key1", 1), 9999));
+    compareOutput(testHarness, expectedOutput);
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 10999)); // wm2: 9999
+    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key2", 3), 7999));
+    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key2", 2), 8999));
+    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key2", 1), 9999));
+    compareOutput(testHarness, expectedOutput);
+
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 20999)); // wm1: 19999
+    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key1", 1), 10999));
+    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key1", 1), 11999));
+    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key1", 1), 12999));
+    compareOutput(testHarness, expectedOutput);
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 20999)); // wm2: 19999
+    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key2", 1), 10999));
+    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key2", 1), 11999));
+    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key2", 1), 12999));
+    compareOutput(testHarness, expectedOutput);
+
+    assertEquals(0, testHarness.numEventTimeTimers());
 
     testHarness.close();
   }
@@ -158,14 +195,15 @@ public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
   public void testTumblingEventTimeWindowsReduce() throws Exception {
     final int windowSize = 3;
 
-    AggregatingWindowWithProcessFunction<
+    PerKeyWMAggregatingWindowWithProcessFunction<
             String,
             Tuple2<String, Integer>,
             Tuple2<String, Integer>,
             Tuple2<String, Integer>,
             Tuple2<String, Integer>>
         processFunction =
-            new AggregatingWindowWithProcessFunction<>(
+            new PerKeyWMAggregatingWindowWithProcessFunction<>(
+                new KeyedBoundedOutOfOrdernessWatermark(Time.milliseconds(2L)),
                 TumblingEventTimeWindows.of(Time.of(windowSize, TimeUnit.SECONDS)),
                 new SumAggregator(),
                 new PassThroughWindowFunction<Tuple2<String, Integer>, String>() {});
@@ -178,24 +216,29 @@ public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
     testHarness.open();
 
     // add elements out-of-order
-    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 3999));
-    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 3000));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 3999)); // wm2: 2999
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 3000)); // wm2: 2999
 
-    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 20));
-    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 0));
-    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 999));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 20)); //   wm1: -980
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 0)); //    wm1: -980
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 999)); //  wm1:   -1
 
-    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1998));
-    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1999));
-    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1000));
-
-    testHarness.processWatermark(new Watermark(999));
-    expectedOutput.add(new Watermark(999));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1998)); // wm2: 2999
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1999)); // wm2: 2999
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1000)); // wm2: 2999
     compareOutput(testHarness, expectedOutput);
 
-    testHarness.processWatermark(new Watermark(1999));
-    expectedOutput.add(new Watermark(1999));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 1999)); // wm1:  999
     compareOutput(testHarness, expectedOutput);
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1999)); // wm2: 2999
+    compareOutput(testHarness, expectedOutput);
+
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 2999)); // wm1: 1999
+    compareOutput(testHarness, expectedOutput);
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 2999)); // wm2: 2999
+    compareOutput(testHarness, expectedOutput);
+
+    assertEquals(0, testHarness.numEventTimeTimers());
 
     // do a snapshot, close and restore again
     OperatorSubtaskState snapshot = testHarness.snapshot(0L, 0L);
@@ -208,32 +251,45 @@ public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
     testHarness.initializeState(snapshot);
     testHarness.open();
 
-    testHarness.processWatermark(new Watermark(2999));
-    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key1", 3), 2999));
-    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key2", 3), 2999));
-    expectedOutput.add(new Watermark(2999));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 3999)); // wm1: 2999
+    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key1", 5), 2999));
+    compareOutput(testHarness, expectedOutput);
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 3999)); // wm2: 2999
     compareOutput(testHarness, expectedOutput);
 
-    testHarness.processWatermark(new Watermark(3999));
-    expectedOutput.add(new Watermark(3999));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 4999)); // wm1: 3999
+    compareOutput(testHarness, expectedOutput);
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 4999)); // wm2: 3999
     compareOutput(testHarness, expectedOutput);
 
-    testHarness.processWatermark(new Watermark(4999));
-    expectedOutput.add(new Watermark(4999));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 5999)); // wm1: 4999
+    compareOutput(testHarness, expectedOutput);
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 5999)); // wm2: 4999
     compareOutput(testHarness, expectedOutput);
 
-    testHarness.processWatermark(new Watermark(5999));
-    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key2", 2), 5999));
-    expectedOutput.add(new Watermark(5999));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 6999)); // wm1: 5999
+    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key1", 3), 5999));
+    compareOutput(testHarness, expectedOutput);
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 6999)); // wm2: 5999
+    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key2", 5), 5999));
     compareOutput(testHarness, expectedOutput);
 
-    // those don't have any effect...
-    testHarness.processWatermark(new Watermark(6999));
-    testHarness.processWatermark(new Watermark(7999));
-    expectedOutput.add(new Watermark(6999));
-    expectedOutput.add(new Watermark(7999));
-
+    // none of the initial elements anymore
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 10999)); // wm1: 9999
+    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key1", 1), 8999));
     compareOutput(testHarness, expectedOutput);
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 10999)); // wm2: 9999
+    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key2", 1), 8999));
+    compareOutput(testHarness, expectedOutput);
+
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 20999)); // wm1: 19999
+    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key1", 1), 11999));
+    compareOutput(testHarness, expectedOutput);
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 20999)); // wm2: 19999
+    expectedOutput.add(new StreamRecord<>(new Tuple2<>("key2", 1), 11999));
+    compareOutput(testHarness, expectedOutput);
+
+    assertEquals(0, testHarness.numEventTimeTimers());
 
     testHarness.close();
   }
@@ -243,14 +299,15 @@ public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
     final int windowSize = 2;
     final long lateness = 500;
 
-    AggregatingWindowWithProcessFunction<
+    PerKeyWMAggregatingWindowWithProcessFunction<
             String,
             Tuple2<String, Integer>,
             Tuple2<String, Integer>,
             Tuple2<String, Integer>,
             Tuple2<String, Integer>>
         processFunction =
-            new AggregatingWindowWithProcessFunction<>(
+            new PerKeyWMAggregatingWindowWithProcessFunction<>(
+                    new KeyedBoundedOutOfOrdernessWatermark(Time.milliseconds(1000L)),
                     TumblingEventTimeWindows.of(Time.of(windowSize, TimeUnit.SECONDS)),
                     new SumAggregator(),
                     new PassThroughWindowFunction<Tuple2<String, Integer>, String>() {})
@@ -266,35 +323,39 @@ public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
     ConcurrentLinkedQueue<Object> expected = new ConcurrentLinkedQueue<>();
     ConcurrentLinkedQueue<Object> lateExpected = new ConcurrentLinkedQueue<>();
 
-    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 500));
-    testHarness.processWatermark(new Watermark(1500));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 500)); //  wm1: -500
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 500)); //  wm2: -500
 
-    expected.add(new Watermark(1500));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 2500)); // wm2: 1500
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1300)); // wm2: 1500
 
-    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1300));
-    testHarness.processWatermark(new Watermark(2300));
-
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 3300)); // wm2: 2300
     expected.add(new StreamRecord<>(new Tuple2<>("key2", 2), 1999));
-    expected.add(new Watermark(2300));
 
     // not in side output because window.maxTimestamp() + allowedLateness > currentWatermark
-    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1997));
-    testHarness.processWatermark(new Watermark(6000));
-
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1997)); // wm2: 2300
     // this is 1 and not 3 because the trigger fires and purges
     expected.add(new StreamRecord<>(new Tuple2<>("key2", 1), 1999));
-    expected.add(new Watermark(6000));
+
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 7000)); // wm2: 6000
+    expected.add(new StreamRecord<>(new Tuple2<>("key2", 2), 3999));
 
     // in side output because window.maxTimestamp() + allowedLateness < currentWatermark
-    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1998));
-    testHarness.processWatermark(new Watermark(7000));
-
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1998)); // wm2: 6000
     lateExpected.add(new StreamRecord<>(new Tuple2<>("key2", 1), 1998));
-    expected.add(new Watermark(7000));
+
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 8000)); // wm2: 7000
+
+    // not late because wm for key1 and key2 differ
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 1000)); // wm1:    0
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 3000)); // wm1: 2000
+    expected.add(new StreamRecord<>(new Tuple2<>("key1", 2), 1999));
 
     compareOutput(testHarness, expected);
 
     compareSideOutput(testHarness, lateExpected);
+
+    assertEquals(0, testHarness.numEventTimeTimers());
 
     testHarness.close();
   }
@@ -307,14 +368,15 @@ public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
     TumblingEventTimeWindows windowAssigner =
         TumblingEventTimeWindows.of(Time.milliseconds(windowSize));
 
-    AggregatingWindowWithProcessFunction<
+    PerKeyWMAggregatingWindowWithProcessFunction<
             String,
             Tuple2<String, Integer>,
             Tuple2<String, Integer>,
             Tuple2<String, Integer>,
             Tuple2<String, Integer>>
         processFunction =
-            new AggregatingWindowWithProcessFunction<>(
+            new PerKeyWMAggregatingWindowWithProcessFunction<>(
+                    new KeyedBoundedOutOfOrdernessWatermark(Time.milliseconds(0L)),
                     windowAssigner,
                     new SumAggregator(),
                     new PassThroughWindowFunction<Tuple2<String, Integer>, String>() {})
@@ -351,20 +413,23 @@ public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
     // if we don't correctly prevent wrap-around in the garbage collection
     // timers this watermark will clean our window state for the just-added
     // element/window
-    testHarness.processWatermark(new Watermark(Long.MAX_VALUE - 1500));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), Long.MAX_VALUE - 1500));
+    compareOutput(testHarness, expected);
 
     // this watermark is before the end timestamp of our only window
     Assert.assertTrue(Long.MAX_VALUE - 1500 < window.maxTimestamp());
     Assert.assertTrue(window.maxTimestamp() < Long.MAX_VALUE);
 
     // push in a watermark that will trigger computation of our window
-    testHarness.processWatermark(new Watermark(window.maxTimestamp()));
-
-    expected.add(new Watermark(Long.MAX_VALUE - 1500));
-    expected.add(new StreamRecord<>(new Tuple2<>("key2", 1), window.maxTimestamp()));
-    expected.add(new Watermark(window.maxTimestamp()));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), window.maxTimestamp()));
+    // the last element is dropped because window assigner doesn't calculate correct start+end
+    // (the watermark is still correct though)
+    expected.add(new StreamRecord<>(new Tuple2<>("key2", 2), window.maxTimestamp()));
 
     compareOutput(testHarness, expected);
+
+    assertEquals(0, testHarness.numEventTimeTimers());
+
     testHarness.close();
   }
 
@@ -372,14 +437,15 @@ public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
   public void testSideOutputDueToLatenessTumbling() throws Exception {
     final int windowSize = 2;
 
-    AggregatingWindowWithProcessFunction<
+    PerKeyWMAggregatingWindowWithProcessFunction<
             String,
             Tuple2<String, Integer>,
             Tuple2<String, Integer>,
             Tuple2<String, Integer>,
             Tuple2<String, Integer>>
         processFunction =
-            new AggregatingWindowWithProcessFunction<>(
+            new PerKeyWMAggregatingWindowWithProcessFunction<>(
+                    new KeyedBoundedOutOfOrdernessWatermark(Time.milliseconds(0L)),
                     TumblingEventTimeWindows.of(Time.of(windowSize, TimeUnit.SECONDS)),
                     new SumAggregator(),
                     new PassThroughWindowFunction<Tuple2<String, Integer>, String>() {})
@@ -394,34 +460,34 @@ public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
     ConcurrentLinkedQueue<Object> sideExpected = new ConcurrentLinkedQueue<>();
 
     // normal element
-    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1000));
-    testHarness.processWatermark(new Watermark(1985));
-
-    expected.add(new Watermark(1985));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1000)); // wm2: 1000
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1985)); // wm2: 1985
 
     // this will not be dropped because window.maxTimestamp() + allowedLateness > currentWatermark
-    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1980));
-    testHarness.processWatermark(new Watermark(1999));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1980)); // wm2: 1985
 
-    expected.add(new StreamRecord<>(new Tuple2<>("key2", 2), 1999));
-    expected.add(new Watermark(1999));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 3999)); // wm1: 3999
+    expected.add(new StreamRecord<>(new Tuple2<>("key1", 1), 3999));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1999)); // wm2: 1999
+    expected.add(new StreamRecord<>(new Tuple2<>("key2", 4), 1999));
 
     // sideoutput as late, will reuse previous timestamp since only input tuple is sideoutputed
-    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1998));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 3998)); // wm1: 3999
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1998)); // wm2: 1999
+    sideExpected.add(new StreamRecord<>(new Tuple2<>("key1", 1), 3998));
     sideExpected.add(new StreamRecord<>(new Tuple2<>("key2", 1), 1998));
 
-    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 2001));
-    testHarness.processWatermark(new Watermark(2999));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 2001)); // wm2: 2001
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 2999)); // wm2: 2999
 
-    expected.add(new Watermark(2999));
-
-    testHarness.processWatermark(new Watermark(3999));
-
-    expected.add(new StreamRecord<>(new Tuple2<>("key2", 1), 3999));
-    expected.add(new Watermark(3999));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 3999)); // wm2: 3999
+    expected.add(new StreamRecord<>(new Tuple2<>("key2", 3), 3999));
 
     compareOutput(testHarness, expected);
     compareSideOutput(testHarness, sideExpected);
+
+    assertEquals(0, testHarness.numEventTimeTimers());
+
     testHarness.close();
   }
 
@@ -430,14 +496,15 @@ public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
     final int windowSize = 3;
     final int windowSlide = 1;
 
-    AggregatingWindowWithProcessFunction<
+    PerKeyWMAggregatingWindowWithProcessFunction<
             String,
             Tuple2<String, Integer>,
             Tuple2<String, Integer>,
             Tuple2<String, Integer>,
             Tuple2<String, Integer>>
         processFunction =
-            new AggregatingWindowWithProcessFunction<>(
+            new PerKeyWMAggregatingWindowWithProcessFunction<>(
+                    new KeyedBoundedOutOfOrdernessWatermark(Time.milliseconds(0L)),
                     SlidingEventTimeWindows.of(
                         Time.of(windowSize, TimeUnit.SECONDS),
                         Time.of(windowSlide, TimeUnit.SECONDS)),
@@ -454,16 +521,12 @@ public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
     ConcurrentLinkedQueue<Object> sideExpected = new ConcurrentLinkedQueue<>();
 
     testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1000));
-    testHarness.processWatermark(new Watermark(1999));
-
-    expected.add(new StreamRecord<>(new Tuple2<>("key2", 1), 1999));
-    expected.add(new Watermark(1999));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1999));
+    expected.add(new StreamRecord<>(new Tuple2<>("key2", 2), 1999));
 
     testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 2000));
-    testHarness.processWatermark(new Watermark(3000));
-
-    expected.add(new StreamRecord<>(new Tuple2<>("key2", 2), 2999));
-    expected.add(new Watermark(3000));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 3000));
+    expected.add(new StreamRecord<>(new Tuple2<>("key2", 3), 2999));
 
     testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 3001));
 
@@ -475,29 +538,37 @@ public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
     testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 2400));
     testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 3001));
     testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 3900));
-    testHarness.processWatermark(new Watermark(6000));
 
-    expected.add(new StreamRecord<>(new Tuple2<>("key2", 5), 3999));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 6000));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 6000));
+
+    expected.add(new StreamRecord<>(new Tuple2<>("key2", 7), 3999));
     expected.add(new StreamRecord<>(new Tuple2<>("key1", 2), 3999));
 
-    expected.add(new StreamRecord<>(new Tuple2<>("key2", 4), 4999));
+    expected.add(new StreamRecord<>(new Tuple2<>("key2", 5), 4999));
     expected.add(new StreamRecord<>(new Tuple2<>("key1", 2), 4999));
 
-    expected.add(new StreamRecord<>(new Tuple2<>("key2", 1), 5999));
+    expected.add(new StreamRecord<>(new Tuple2<>("key2", 2), 5999));
     expected.add(new StreamRecord<>(new Tuple2<>("key1", 2), 5999));
-
-    expected.add(new Watermark(6000));
 
     // sideoutput element due to lateness
     testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 3001));
     sideExpected.add(new StreamRecord<>(new Tuple2<>("key1", 1), 3001));
 
-    testHarness.processWatermark(new Watermark(25000));
-
-    expected.add(new Watermark(25000));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key1", 1), 25000));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 25000));
+    expected.add(new StreamRecord<>(new Tuple2<>("key2", 1), 6999));
+    expected.add(new StreamRecord<>(new Tuple2<>("key1", 1), 6999));
+    expected.add(new StreamRecord<>(new Tuple2<>("key2", 1), 7999));
+    expected.add(new StreamRecord<>(new Tuple2<>("key1", 1), 7999));
+    expected.add(new StreamRecord<>(new Tuple2<>("key2", 1), 8999));
+    expected.add(new StreamRecord<>(new Tuple2<>("key1", 1), 8999));
 
     compareOutput(testHarness, expected);
     compareSideOutput(testHarness, sideExpected);
+
+    assertEquals(0, testHarness.numEventTimeTimers());
+
     testHarness.close();
   }
 
@@ -506,14 +577,15 @@ public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
     final int windowSize = 2;
     final long lateness = 1;
 
-    AggregatingWindowWithProcessFunction<
+    PerKeyWMAggregatingWindowWithProcessFunction<
             String,
             Tuple2<String, Integer>,
             Tuple2<String, Integer>,
             Tuple2<String, Integer>,
             Tuple2<String, Integer>>
         processFunction =
-            new AggregatingWindowWithProcessFunction<>(
+            new PerKeyWMAggregatingWindowWithProcessFunction<>(
+                    new KeyedBoundedOutOfOrdernessWatermark(Time.milliseconds(0L)),
                     TumblingEventTimeWindows.of(Time.of(windowSize, TimeUnit.SECONDS)),
                     new SumAggregator(),
                     new PassThroughWindowFunction<Tuple2<String, Integer>, String>() {})
@@ -528,18 +600,17 @@ public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
 
     // normal element
     testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1000));
-    testHarness.processWatermark(new Watermark(1599));
-    testHarness.processWatermark(new Watermark(1999));
-    testHarness.processWatermark(new Watermark(2000));
-    testHarness.processWatermark(new Watermark(5000));
-
-    expected.add(new Watermark(1599));
-    expected.add(new StreamRecord<>(new Tuple2<>("key2", 1), 1999));
-    expected.add(new Watermark(1999)); // here it fires and purges
-    expected.add(new Watermark(2000)); // here is the cleanup timer
-    expected.add(new Watermark(5000));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1599));
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 1999));
+    expected.add(new StreamRecord<>(new Tuple2<>("key2", 3), 1999)); // here it fires and purges
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 2000));
+    expected.add(new StreamRecord<>(new Tuple2<>("key2", 1), 3999)); // here is the cleanup timer
+    testHarness.processElement(new StreamRecord<>(new Tuple2<>("key2", 1), 5000));
 
     compareOutput(testHarness, expected);
+
+    assertEquals(0, testHarness.numEventTimeTimers());
+
     testHarness.close();
   }
 
@@ -563,10 +634,10 @@ public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
   private static void compareOutput(
       OneInputStreamOperatorTestHarness<Tuple2<String, Integer>, Tuple2<String, Integer>>
           testHarness,
-      ConcurrentLinkedQueue<Object> expected) {
+      ConcurrentLinkedQueue<Object> expectedOutput) {
     TestHarnessUtil.assertOutputEqualsSorted(
         "Output was not correct.",
-        expected,
+        expectedOutput,
         testHarness.getOutput(),
         new Tuple2ResultSortComparator());
   }
@@ -575,10 +646,10 @@ public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
   private static void compareSideOutput(
       OneInputStreamOperatorTestHarness<Tuple2<String, Integer>, Tuple2<String, Integer>>
           testHarness,
-      ConcurrentLinkedQueue<Object> lateExpected) {
+      ConcurrentLinkedQueue<Object> sideExpected) {
     TestHarnessUtil.assertOutputEqualsSorted(
         "SideOutput was not correct.",
-        lateExpected,
+        sideExpected,
         (Iterable) testHarness.getSideOutput(lateOutputTag),
         new Tuple2ResultSortComparator());
   }
