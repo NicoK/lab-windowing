@@ -104,31 +104,19 @@ public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
     testHarness.processWatermark(new Watermark(999));
     expectedOutput.add(new StreamRecord<>(new Tuple2<>("key1", 3), 999));
     expectedOutput.add(new Watermark(999));
-    TestHarnessUtil.assertOutputEqualsSorted(
-        "Output was not correct.",
-        expectedOutput,
-        testHarness.getOutput(),
-        new Tuple2ResultSortComparator());
+    compareOutput(testHarness, expectedOutput);
 
     testHarness.processWatermark(new Watermark(1999));
     expectedOutput.add(new StreamRecord<>(new Tuple2<>("key1", 3), 1999));
     expectedOutput.add(new StreamRecord<>(new Tuple2<>("key2", 3), 1999));
     expectedOutput.add(new Watermark(1999));
-    TestHarnessUtil.assertOutputEqualsSorted(
-        "Output was not correct.",
-        expectedOutput,
-        testHarness.getOutput(),
-        new Tuple2ResultSortComparator());
+    compareOutput(testHarness, expectedOutput);
 
     testHarness.processWatermark(new Watermark(2999));
     expectedOutput.add(new StreamRecord<>(new Tuple2<>("key1", 3), 2999));
     expectedOutput.add(new StreamRecord<>(new Tuple2<>("key2", 3), 2999));
     expectedOutput.add(new Watermark(2999));
-    TestHarnessUtil.assertOutputEqualsSorted(
-        "Output was not correct.",
-        expectedOutput,
-        testHarness.getOutput(),
-        new Tuple2ResultSortComparator());
+    compareOutput(testHarness, expectedOutput);
 
     // do a snapshot, close and restore again
     OperatorSubtaskState snapshot = testHarness.snapshot(0L, 0L);
@@ -143,29 +131,17 @@ public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
     testHarness.processWatermark(new Watermark(3999));
     expectedOutput.add(new StreamRecord<>(new Tuple2<>("key2", 5), 3999));
     expectedOutput.add(new Watermark(3999));
-    TestHarnessUtil.assertOutputEqualsSorted(
-        "Output was not correct.",
-        expectedOutput,
-        testHarness.getOutput(),
-        new Tuple2ResultSortComparator());
+    compareOutput(testHarness, expectedOutput);
 
     testHarness.processWatermark(new Watermark(4999));
     expectedOutput.add(new StreamRecord<>(new Tuple2<>("key2", 2), 4999));
     expectedOutput.add(new Watermark(4999));
-    TestHarnessUtil.assertOutputEqualsSorted(
-        "Output was not correct.",
-        expectedOutput,
-        testHarness.getOutput(),
-        new Tuple2ResultSortComparator());
+    compareOutput(testHarness, expectedOutput);
 
     testHarness.processWatermark(new Watermark(5999));
     expectedOutput.add(new StreamRecord<>(new Tuple2<>("key2", 2), 5999));
     expectedOutput.add(new Watermark(5999));
-    TestHarnessUtil.assertOutputEqualsSorted(
-        "Output was not correct.",
-        expectedOutput,
-        testHarness.getOutput(),
-        new Tuple2ResultSortComparator());
+    compareOutput(testHarness, expectedOutput);
 
     // those don't have any effect...
     testHarness.processWatermark(new Watermark(6999));
@@ -173,11 +149,7 @@ public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
     expectedOutput.add(new Watermark(6999));
     expectedOutput.add(new Watermark(7999));
 
-    TestHarnessUtil.assertOutputEqualsSorted(
-        "Output was not correct.",
-        expectedOutput,
-        testHarness.getOutput(),
-        new Tuple2ResultSortComparator());
+    compareOutput(testHarness, expectedOutput);
 
     testHarness.close();
   }
@@ -219,27 +191,15 @@ public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
 
     testHarness.processWatermark(new Watermark(999));
     expectedOutput.add(new Watermark(999));
-    TestHarnessUtil.assertOutputEqualsSorted(
-        "Output was not correct.",
-        expectedOutput,
-        testHarness.getOutput(),
-        new Tuple2ResultSortComparator());
+    compareOutput(testHarness, expectedOutput);
 
     testHarness.processWatermark(new Watermark(1999));
     expectedOutput.add(new Watermark(1999));
-    TestHarnessUtil.assertOutputEqualsSorted(
-        "Output was not correct.",
-        expectedOutput,
-        testHarness.getOutput(),
-        new Tuple2ResultSortComparator());
+    compareOutput(testHarness, expectedOutput);
 
     // do a snapshot, close and restore again
     OperatorSubtaskState snapshot = testHarness.snapshot(0L, 0L);
-    TestHarnessUtil.assertOutputEqualsSorted(
-        "Output was not correct.",
-        expectedOutput,
-        testHarness.getOutput(),
-        new Tuple2ResultSortComparator());
+    compareOutput(testHarness, expectedOutput);
     testHarness.close();
 
     testHarness = createTestHarness(processFunction);
@@ -252,36 +212,20 @@ public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
     expectedOutput.add(new StreamRecord<>(new Tuple2<>("key1", 3), 2999));
     expectedOutput.add(new StreamRecord<>(new Tuple2<>("key2", 3), 2999));
     expectedOutput.add(new Watermark(2999));
-    TestHarnessUtil.assertOutputEqualsSorted(
-        "Output was not correct.",
-        expectedOutput,
-        testHarness.getOutput(),
-        new Tuple2ResultSortComparator());
+    compareOutput(testHarness, expectedOutput);
 
     testHarness.processWatermark(new Watermark(3999));
     expectedOutput.add(new Watermark(3999));
-    TestHarnessUtil.assertOutputEqualsSorted(
-        "Output was not correct.",
-        expectedOutput,
-        testHarness.getOutput(),
-        new Tuple2ResultSortComparator());
+    compareOutput(testHarness, expectedOutput);
 
     testHarness.processWatermark(new Watermark(4999));
     expectedOutput.add(new Watermark(4999));
-    TestHarnessUtil.assertOutputEqualsSorted(
-        "Output was not correct.",
-        expectedOutput,
-        testHarness.getOutput(),
-        new Tuple2ResultSortComparator());
+    compareOutput(testHarness, expectedOutput);
 
     testHarness.processWatermark(new Watermark(5999));
     expectedOutput.add(new StreamRecord<>(new Tuple2<>("key2", 2), 5999));
     expectedOutput.add(new Watermark(5999));
-    TestHarnessUtil.assertOutputEqualsSorted(
-        "Output was not correct.",
-        expectedOutput,
-        testHarness.getOutput(),
-        new Tuple2ResultSortComparator());
+    compareOutput(testHarness, expectedOutput);
 
     // those don't have any effect...
     testHarness.processWatermark(new Watermark(6999));
@@ -289,11 +233,7 @@ public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
     expectedOutput.add(new Watermark(6999));
     expectedOutput.add(new Watermark(7999));
 
-    TestHarnessUtil.assertOutputEqualsSorted(
-        "Output was not correct.",
-        expectedOutput,
-        testHarness.getOutput(),
-        new Tuple2ResultSortComparator());
+    compareOutput(testHarness, expectedOutput);
 
     testHarness.close();
   }
@@ -353,18 +293,9 @@ public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
     lateExpected.add(new StreamRecord<>(new Tuple2<>("key2", 1), 1998));
     expected.add(new Watermark(7000));
 
-    TestHarnessUtil.assertOutputEqualsSorted(
-        "Output was not correct.",
-        expected,
-        testHarness.getOutput(),
-        new Tuple2ResultSortComparator());
+    compareOutput(testHarness, expected);
 
-    //noinspection unchecked,rawtypes
-    TestHarnessUtil.assertOutputEqualsSorted(
-        "SideOutput was not correct.",
-        lateExpected,
-        (Iterable) testHarness.getSideOutput(lateOutputTag),
-        new Tuple2ResultSortComparator());
+    compareSideOutput(testHarness, lateExpected);
 
     testHarness.close();
   }
@@ -434,11 +365,7 @@ public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
     expected.add(new StreamRecord<>(new Tuple2<>("key2", 1), window.maxTimestamp()));
     expected.add(new Watermark(window.maxTimestamp()));
 
-    TestHarnessUtil.assertOutputEqualsSorted(
-        "Output was not correct.",
-        expected,
-        testHarness.getOutput(),
-        new Tuple2ResultSortComparator());
+    compareOutput(testHarness, expected);
     testHarness.close();
   }
 
@@ -494,17 +421,8 @@ public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
     expected.add(new StreamRecord<>(new Tuple2<>("key2", 1), 3999));
     expected.add(new Watermark(3999));
 
-    TestHarnessUtil.assertOutputEqualsSorted(
-        "Output was not correct.",
-        expected,
-        testHarness.getOutput(),
-        new Tuple2ResultSortComparator());
-    //noinspection unchecked,rawtypes
-    TestHarnessUtil.assertOutputEqualsSorted(
-        "SideOutput was not correct.",
-        sideExpected,
-        (Iterable) testHarness.getSideOutput(lateOutputTag),
-        new Tuple2ResultSortComparator());
+    compareOutput(testHarness, expected);
+    compareSideOutput(testHarness, sideExpected);
     testHarness.close();
   }
 
@@ -579,17 +497,8 @@ public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
 
     expected.add(new Watermark(25000));
 
-    TestHarnessUtil.assertOutputEqualsSorted(
-        "Output was not correct.",
-        expected,
-        testHarness.getOutput(),
-        new Tuple2ResultSortComparator());
-    //noinspection unchecked,rawtypes
-    TestHarnessUtil.assertOutputEqualsSorted(
-        "SideOutput was not correct.",
-        sideExpected,
-        (Iterable) testHarness.getSideOutput(lateOutputTag),
-        new Tuple2ResultSortComparator());
+    compareOutput(testHarness, expected);
+    compareSideOutput(testHarness, sideExpected);
     testHarness.close();
   }
 
@@ -631,11 +540,7 @@ public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
     expected.add(new Watermark(2000)); // here is the cleanup timer
     expected.add(new Watermark(5000));
 
-    TestHarnessUtil.assertOutputEqualsSorted(
-        "Output was not correct.",
-        expected,
-        testHarness.getOutput(),
-        new Tuple2ResultSortComparator());
+    compareOutput(testHarness, expected);
     testHarness.close();
   }
 
@@ -650,6 +555,29 @@ public class AggregatingWindowWithProcessFunctionTest extends TestLogger {
         1,
         1,
         0);
+  }
+
+  private static void compareOutput(
+      OneInputStreamOperatorTestHarness<Tuple2<String, Integer>, Tuple2<String, Integer>>
+          testHarness,
+      ConcurrentLinkedQueue<Object> expected) {
+    TestHarnessUtil.assertOutputEqualsSorted(
+        "Output was not correct.",
+        expected,
+        testHarness.getOutput(),
+        new Tuple2ResultSortComparator());
+  }
+
+  @SuppressWarnings({"unchecked", "rawtypes"})
+  private static void compareSideOutput(
+      OneInputStreamOperatorTestHarness<Tuple2<String, Integer>, Tuple2<String, Integer>>
+          testHarness,
+      ConcurrentLinkedQueue<Object> lateExpected) {
+    TestHarnessUtil.assertOutputEqualsSorted(
+        "SideOutput was not correct.",
+        lateExpected,
+        (Iterable) testHarness.getSideOutput(lateOutputTag),
+        new Tuple2ResultSortComparator());
   }
 
   // ------------------------------------------------------------------------
