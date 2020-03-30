@@ -81,18 +81,20 @@ public class KeyedBoundedOutOfOrdernessWatermark implements Function {
    * with {@link #getCurrentWatermark(Context)}!).
    *
    * @param ctx ProcessFunction context
+   * @return the new per-key watermark
    * @throws IOException if the watermark cannot be updated
    */
-  public final void updateCurrentWatermark(Context ctx) throws IOException {
+  public final Long updateCurrentWatermark(Context ctx) throws IOException {
     long timestamp = ctx.timestamp();
     // this guarantees that the watermark never goes backwards.
     long potentialWM = timestamp - maxOutOfOrderness;
-    ensureWatermarkCached(ctx);
-    if (potentialWM >= lastWatermark) {
-      lastWatermark = potentialWM;
-      watermark.update(lastWatermark);
+    Long currentWatermark = getWatermarkCached(ctx);
+    if (potentialWM >= currentWatermark) {
+      currentWatermark = potentialWM;
+      watermark.update(currentWatermark);
     }
     invalidateWatermarkCache();
+    return currentWatermark;
   }
 
   /**
@@ -107,15 +109,14 @@ public class KeyedBoundedOutOfOrdernessWatermark implements Function {
     lastKey = ctx.getCurrentKey();
   }
 
-  private void ensureWatermarkCached(Context ctx) throws IOException {
+  private Long getWatermarkCached(Context ctx) throws IOException {
     if (lastWatermark == null || lastKey != ctx.getCurrentKey()) {
-      getCurrentWatermark(ctx);
+      return getCurrentWatermark(ctx);
     }
+    return lastWatermark;
   }
 
-  /**
-   * Invalidates the watermark cache to allow early GC.
-   */
+  /** Invalidates the watermark cache to allow early GC. */
   private void invalidateWatermarkCache() {
     lastWatermark = null;
     lastKey = null;
