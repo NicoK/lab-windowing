@@ -37,7 +37,7 @@ plugins {
 group = 'com.ververica'
 version = '0.1-SNAPSHOT'
 mainClassName = 'com.ververica.PerKeyWatermarking'
-description = """Lab: Flink Per-Key Watermarking"""
+description = """Lab: Flink Windowing"""
 
 ext {
     javaVersion = '1.8'
