@@ -4,6 +4,7 @@ import static org.apache.flink.util.Preconditions.checkArgument;
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
 import java.util.Collection;
+import java.util.Collections;
 import org.apache.flink.api.common.state.MapState;
 import org.apache.flink.api.common.state.MapStateDescriptor;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
@@ -48,7 +49,7 @@ public class AggregatingWindowWithProcessFunction<Key, IN, OUT, ACC, ACC_OUT>
 
   private final WindowAssigner<Object, TimeWindow> windowAssigner;
   private final AggregateFunctionWithTypes<IN, ACC, ACC_OUT> windowAggregateFunction;
-  private final ProcessWindowFunction<Key, ACC_OUT, OUT> windowProcessFunction;
+  private final ProcessWindowFunction<ACC_OUT, OUT, Key> windowProcessFunction;
 
   private TriggerResult windowFireMode = TriggerResult.FIRE;
   /**
@@ -78,7 +79,7 @@ public class AggregatingWindowWithProcessFunction<Key, IN, OUT, ACC, ACC_OUT>
   public AggregatingWindowWithProcessFunction(
       WindowAssigner<Object, TimeWindow> windowAssigner,
       AggregateFunctionWithTypes<IN, ACC, ACC_OUT> windowAggregateFunction,
-      ProcessWindowFunction<Key, ACC_OUT, OUT> windowProcessFunction) {
+      ProcessWindowFunction<ACC_OUT, OUT, Key> windowProcessFunction) {
     this.windowProcessFunction = windowProcessFunction;
 
     checkNotNull(windowAssigner);
@@ -191,7 +192,8 @@ public class AggregatingWindowWithProcessFunction<Key, IN, OUT, ACC, ACC_OUT>
       throws Exception {
     ((TimestampedCollector<OUT>) out).setAbsoluteTimestamp(window.maxTimestamp());
     ACC_OUT result = windowAggregateFunction.getResult(contents);
-    windowProcessFunction.process(ctx.getCurrentKey(), window, result, out);
+    windowProcessFunction.process(
+        ctx.getCurrentKey(), window, Collections.singletonList(result), out);
   }
 
   /**
@@ -363,7 +365,7 @@ public class AggregatingWindowWithProcessFunction<Key, IN, OUT, ACC, ACC_OUT>
   }
 
   private static <IN, OUT, KEY> TypeInformation<OUT> getProcessWindowFunctionReturnType(
-      ProcessWindowFunction<KEY, IN, OUT> function) {
+      ProcessWindowFunction<IN, OUT, KEY> function) {
     return TypeExtractor.getUnaryOperatorReturnType(
         function, ProcessWindowFunction.class, 1, 2, TypeExtractor.NO_INDEX, null, null, false);
   }

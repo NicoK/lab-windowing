@@ -9,10 +9,12 @@ import org.apache.flink.util.Collector;
  * @param <IN> Input type.
  * @param <KEY> Key type.
  */
-public class PassThroughWindowFunction<IN, KEY> implements ProcessWindowFunction<KEY, IN, IN> {
+public class PassThroughWindowFunction<IN, KEY> implements ProcessWindowFunction<IN, IN, KEY> {
 
   @Override
-  public void process(KEY key, TimeWindow window, IN input, Collector<IN> out) {
-    out.collect(input);
+  public void process(KEY key, TimeWindow window, Iterable<IN> input, Collector<IN> out) {
+    for (IN element : input) {
+      out.collect(element);
+    }
   }
 }

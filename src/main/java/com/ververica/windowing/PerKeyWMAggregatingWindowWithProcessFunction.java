@@ -55,7 +55,7 @@ public class PerKeyWMAggregatingWindowWithProcessFunction<Key, IN, OUT, ACC, ACC
 
   private final WindowAssigner<Object, TimeWindow> windowAssigner;
   private final AggregateFunctionWithTypes<IN, ACC, ACC_OUT> windowAggregateFunction;
-  private final ProcessWindowFunction<Key, ACC_OUT, OUT> windowProcessFunction;
+  private final ProcessWindowFunction<ACC_OUT, OUT, Key> windowProcessFunction;
 
   private TriggerResult windowFireMode = TriggerResult.FIRE;
   /**
@@ -86,7 +86,7 @@ public class PerKeyWMAggregatingWindowWithProcessFunction<Key, IN, OUT, ACC, ACC
       KeyedBoundedOutOfOrdernessWatermark watermark,
       WindowAssigner<Object, TimeWindow> windowAssigner,
       AggregateFunctionWithTypes<IN, ACC, ACC_OUT> windowAggregateFunction,
-      ProcessWindowFunction<Key, ACC_OUT, OUT> windowProcessFunction) {
+      ProcessWindowFunction<ACC_OUT, OUT, Key> windowProcessFunction) {
     this.watermark = watermark;
     this.windowProcessFunction = windowProcessFunction;
 
@@ -216,7 +216,7 @@ public class PerKeyWMAggregatingWindowWithProcessFunction<Key, IN, OUT, ACC, ACC
       Collector<OUT> out, TimeWindow window, ACC contents, Key currentKey) throws Exception {
     ((TimestampedCollector<OUT>) out).setAbsoluteTimestamp(window.maxTimestamp());
     ACC_OUT result = windowAggregateFunction.getResult(contents);
-    windowProcessFunction.process(currentKey, window, result, out);
+    windowProcessFunction.process(currentKey, window, Collections.singletonList(result), out);
   }
 
   /**
@@ -393,7 +393,7 @@ public class PerKeyWMAggregatingWindowWithProcessFunction<Key, IN, OUT, ACC, ACC
   }
 
   private static <IN, OUT, KEY> TypeInformation<OUT> getProcessWindowFunctionReturnType(
-      ProcessWindowFunction<KEY, IN, OUT> function) {
+      ProcessWindowFunction<IN, OUT, KEY> function) {
     return TypeExtractor.getUnaryOperatorReturnType(
         function, ProcessWindowFunction.class, 1, 2, TypeExtractor.NO_INDEX, null, null, false);
   }

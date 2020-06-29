@@ -11,10 +11,13 @@ import org.apache.flink.util.Collector;
  * @param <KEY> Key type.
  */
 public class EnrichingWindowFunction<IN, KEY>
-    implements ProcessWindowFunction<KEY, IN, Tuple2<Long, IN>> {
+    implements ProcessWindowFunction<IN, Tuple2<Long, IN>, KEY> {
 
   @Override
-  public void process(KEY key, TimeWindow window, IN input, Collector<Tuple2<Long, IN>> out) {
-    out.collect(Tuple2.of(window.getEnd(), input));
+  public void process(
+      KEY key, TimeWindow window, Iterable<IN> input, Collector<Tuple2<Long, IN>> out) {
+    for (IN element : input) {
+      out.collect(Tuple2.of(window.getEnd(), element));
+    }
   }
 }
