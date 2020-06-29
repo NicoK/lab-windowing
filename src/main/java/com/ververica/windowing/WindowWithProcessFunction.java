@@ -8,7 +8,6 @@ import java.util.Collection;
 import java.util.List;
 import org.apache.flink.api.common.state.MapState;
 import org.apache.flink.api.common.state.MapStateDescriptor;
-import org.apache.flink.api.common.typeinfo.TypeHint;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.api.common.typeutils.base.LongSerializer;
@@ -43,6 +42,7 @@ public class WindowWithProcessFunction<Key, IN, OUT> extends KeyedProcessFunctio
 
   private static final Logger LOG = LoggerFactory.getLogger(WindowWithProcessFunction.class);
 
+  private final TypeInformation<IN> inputType;
   private TypeInformation<OUT> producedType = null;
 
   private transient MapState<Long, TimeWindow> windowInfo;
@@ -77,8 +77,10 @@ public class WindowWithProcessFunction<Key, IN, OUT> extends KeyedProcessFunctio
   private transient WindowAssignerContext windowAssignerContext;
 
   public WindowWithProcessFunction(
+      TypeInformation<IN> inputType,
       WindowAssigner<Object, TimeWindow> windowAssigner,
       ProcessWindowFunction<IN, OUT, Key> windowProcessFunction) {
+    this.inputType = inputType;
     this.windowProcessFunction = windowProcessFunction;
 
     checkNotNull(windowAssigner);
@@ -307,10 +309,7 @@ public class WindowWithProcessFunction<Key, IN, OUT> extends KeyedProcessFunctio
     windowState =
         getRuntimeContext()
             .getMapState(
-                new MapStateDescriptor<>(
-                    "WindowState",
-                    Types.LONG,
-                    TypeInformation.of(new TypeHint<List<IN>>() {})));
+                new MapStateDescriptor<>("WindowState", Types.LONG, Types.LIST(inputType)));
   }
 
   private void setWindowContext(final Context ctx) {

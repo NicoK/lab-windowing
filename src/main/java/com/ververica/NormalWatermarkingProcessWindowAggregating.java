@@ -19,8 +19,9 @@
 package com.ververica;
 
 import com.ververica.timestamps.BoundedOutOfOrderdnessPunctuatedWatermark;
-import com.ververica.windowing.CountAggregateWindowFunction;
-import com.ververica.windowing.WindowWithProcessFunction;
+import com.ververica.windowing.AggregatingWindowWithProcessFunction;
+import com.ververica.windowing.CountAggregateFunction;
+import com.ververica.windowing.EnrichingWindowFunction;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.utils.ParameterTool;
 import org.apache.flink.configuration.Configuration;
@@ -33,9 +34,10 @@ import org.apache.flink.util.OutputTag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class NormalWatermarkingProcessWindow {
+public class NormalWatermarkingProcessWindowAggregating {
 
-  private static final Logger LOG = LoggerFactory.getLogger(NormalWatermarkingProcessWindow.class);
+  private static final Logger LOG =
+      LoggerFactory.getLogger(NormalWatermarkingProcessWindowAggregating.class);
 
   public static void main(String[] args) throws Exception {
     ParameterTool tool = ParameterTool.fromArgs(args);
@@ -68,10 +70,10 @@ public class NormalWatermarkingProcessWindow {
         sourceStream
             .keyBy(x -> x.f1)
             .process(
-                new WindowWithProcessFunction<>(
-                        sourceStream.getType(),
+                new AggregatingWindowWithProcessFunction<>(
                         TumblingEventTimeWindows.of(Time.milliseconds(10)),
-                        new CountAggregateWindowFunction<Tuple2<Long, String>, String>() {})
+                        new CountAggregate(),
+                        new EnrichingWindowFunction<Tuple2<String, Long>, String>() {})
                     .sideOutputLateData(lateElements));
 
     process.getSideOutput(lateElements).printToErr("late");
@@ -93,5 +95,13 @@ public class NormalWatermarkingProcessWindow {
       env = StreamExecutionEnvironment.getExecutionEnvironment();
     }
     return env;
+  }
+
+  private static class CountAggregate extends CountAggregateFunction<Tuple2<Long, String>> {
+
+    @Override
+    protected String getKey(Tuple2<Long, String> value) {
+      return value.f1;
+    }
   }
 }
