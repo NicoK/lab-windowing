@@ -9,6 +9,7 @@ import org.apache.flink.api.common.state.MapState;
 import org.apache.flink.api.common.state.MapStateDescriptor;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.common.typeinfo.Types;
+import org.apache.flink.api.common.typeutils.base.LongSerializer;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.typeutils.ResultTypeQueryable;
 import org.apache.flink.api.java.typeutils.TypeExtractor;
@@ -45,7 +46,8 @@ public class AggregatingWindowWithProcessFunction<Key, IN, OUT, ACC, ACC_OUT>
 
   private TypeInformation<OUT> producedType = null;
 
-  private transient MapState<Long, Tuple2<Long, ACC>> windowState;
+  private transient MapState<Long, TimeWindow> windowInfo;
+  private transient MapState<Long, ACC> windowState;
 
   private final WindowAssigner<Object, TimeWindow> windowAssigner;
   private final AggregateFunctionWithTypes<IN, ACC, ACC_OUT> windowAggregateFunction;
@@ -114,21 +116,23 @@ public class AggregatingWindowWithProcessFunction<Key, IN, OUT, ACC, ACC_OUT>
       isSkippedElement = false;
 
       long stateKey = windowToStateKey(window);
-      Tuple2<Long, ACC> stateEntry = windowState.get(stateKey);
+      ACC stateEntry = windowState.get(stateKey);
       boolean firstInWindow = stateEntry == null;
       if (firstInWindow) {
-        stateEntry = Tuple2.of(window.getStart(), windowAggregateFunction.createAccumulator());
+        stateEntry = windowAggregateFunction.createAccumulator();
+        windowInfo.put(stateKey, window);
       }
-      stateEntry.f1 = windowAggregateFunction.add(value, stateEntry.f1);
+      stateEntry = windowAggregateFunction.add(value, stateEntry);
       windowState.put(stateKey, stateEntry);
 
       boolean cleanupTimerNeeded = firstInWindow && allowedLateness > 0;
       if (window.maxTimestamp() <= currentWatermark) {
         // event within allowed lateness
-        emitWindowContents(out, window, stateEntry.f1, ctx);
+        emitWindowContents(out, window, stateEntry, ctx);
 
         if (windowFireMode.isPurge()) {
           windowState.remove(stateKey);
+          windowInfo.remove(stateKey);
         } else {
           cleanupTimerNeeded = firstInWindow;
         }
@@ -169,18 +173,20 @@ public class AggregatingWindowWithProcessFunction<Key, IN, OUT, ACC, ACC_OUT>
       // windows)
       long windowEndStateKey = regularEndTimeToStateKey(timestamp);
       long cleanupStateKey = cleanupTimeToStateKey(timestamp);
-      Tuple2<Long, ACC> currentState = windowState.get(windowEndStateKey);
+      ACC currentState = windowState.get(windowEndStateKey);
       if (currentState != null) {
         emitWindowContents(
-            out, new TimeWindow(currentState.f0, windowEndStateKey), currentState.f1, ctx);
+            out, windowInfo.get(windowEndStateKey), currentState, ctx);
 
         if (windowFireMode.isPurge()) {
           windowState.remove(windowEndStateKey);
+          windowInfo.remove(windowEndStateKey);
         }
       }
 
       // if it exists, this is always a cleanup timer!
       windowState.remove(cleanupStateKey);
+      windowInfo.remove(windowEndStateKey);
 
     } else {
       LOG.error("Timers should only be in event time!");
@@ -300,13 +306,18 @@ public class AggregatingWindowWithProcessFunction<Key, IN, OUT, ACC, ACC_OUT>
     this.numLateRecordsDropped =
         getRuntimeContext().getMetricGroup().counter(LATE_ELEMENTS_DROPPED_METRIC_NAME);
 
+    windowInfo =
+        getRuntimeContext()
+            .getMapState(
+                new MapStateDescriptor<>(
+                    "WindowInfo", LongSerializer.INSTANCE, new TimeWindow.Serializer()));
     windowState =
         getRuntimeContext()
             .getMapState(
                 new MapStateDescriptor<>(
                     "WindowAggregate",
                     Types.LONG,
-                    Types.TUPLE(Types.LONG, windowAggregateFunction.getAccumulatorType())));
+                    windowAggregateFunction.getAccumulatorType()));
   }
 
   private void setWindowContext(final Context ctx) {
