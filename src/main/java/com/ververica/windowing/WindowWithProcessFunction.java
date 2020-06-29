@@ -367,6 +367,6 @@ public class WindowWithProcessFunction<Key, IN, OUT> extends KeyedProcessFunctio
   private static <IN, OUT, KEY> TypeInformation<OUT> getProcessWindowFunctionReturnType(
       ProcessWindowFunction<IN, OUT, KEY> function) {
     return TypeExtractor.getUnaryOperatorReturnType(
-        function, ProcessWindowFunction.class, 1, 2, TypeExtractor.NO_INDEX, null, null, false);
+        function, ProcessWindowFunction.class, 0, 1, TypeExtractor.NO_INDEX, null, null, false);
   }
 }
