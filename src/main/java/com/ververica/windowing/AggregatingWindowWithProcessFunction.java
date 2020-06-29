@@ -10,7 +10,6 @@ import org.apache.flink.api.common.state.MapStateDescriptor;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.api.common.typeutils.base.LongSerializer;
-import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.typeutils.ResultTypeQueryable;
 import org.apache.flink.api.java.typeutils.TypeExtractor;
 import org.apache.flink.configuration.Configuration;
@@ -175,8 +174,7 @@ public class AggregatingWindowWithProcessFunction<Key, IN, OUT, ACC, ACC_OUT>
       long cleanupStateKey = cleanupTimeToStateKey(timestamp);
       ACC currentState = windowState.get(windowEndStateKey);
       if (currentState != null) {
-        emitWindowContents(
-            out, windowInfo.get(windowEndStateKey), currentState, ctx);
+        emitWindowContents(out, windowInfo.get(windowEndStateKey), currentState, ctx);
 
         if (windowFireMode.isPurge()) {
           windowState.remove(windowEndStateKey);
@@ -315,9 +313,7 @@ public class AggregatingWindowWithProcessFunction<Key, IN, OUT, ACC, ACC_OUT>
         getRuntimeContext()
             .getMapState(
                 new MapStateDescriptor<>(
-                    "WindowAggregate",
-                    Types.LONG,
-                    windowAggregateFunction.getAccumulatorType()));
+                    "WindowAggregate", Types.LONG, windowAggregateFunction.getAccumulatorType()));
   }
 
   private void setWindowContext(final Context ctx) {

@@ -308,7 +308,7 @@ public class WindowWithProcessFunction<Key, IN, OUT> extends KeyedProcessFunctio
         getRuntimeContext()
             .getMapState(
                 new MapStateDescriptor<>(
-                    "WindowAggregate",
+                    "WindowState",
                     Types.LONG,
                     TypeInformation.of(new TypeHint<List<IN>>() {})));
   }
