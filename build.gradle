@@ -27,6 +27,7 @@ buildscript {
 plugins {
     id 'java'
     id 'application'
+    id 'maven-publish'
     // shadow plugin to produce fat JARs
     id 'com.github.johnrengelman.shadow' version '5.2.0'
     id "com.github.sherter.google-java-format" version '0.8'
@@ -120,4 +121,12 @@ jar {
 
 shadowJar {
     configurations = [project.configurations.flinkShadowJar]
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from components.java
+        }
+    }
 }
