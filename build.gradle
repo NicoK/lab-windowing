@@ -61,6 +61,7 @@ applicationDefaultJvmArgs = ["-Dlog4j.configuration=log4j.properties"]
 
 // declare where to find the dependencies of your project
 repositories {
+    mavenLocal()
     mavenCentral()
     maven {
         url "https://repository.apache.org/content/repositories/snapshots/"
