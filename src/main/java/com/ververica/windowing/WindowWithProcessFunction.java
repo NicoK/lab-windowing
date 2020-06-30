@@ -183,7 +183,7 @@ public class WindowWithProcessFunction<Key, IN, OUT> extends KeyedProcessFunctio
 
       // if it exists, this is always a cleanup timer!
       windowState.remove(cleanupStateKey);
-      windowInfo.remove(windowEndStateKey);
+      windowInfo.remove(cleanupStateKey);
 
     } else {
       LOG.error("Timers should only be in event time!");
