@@ -183,7 +183,7 @@ public class WindowWithProcessFunctionNewAPI<Key, IN, OUT>
       // if it exists, this is always a cleanup timer!
       windowState.setTime(cleanupStateKey);
       windowState.clear();
-      windowInfo.remove(windowEndStateKey);
+      windowInfo.remove(cleanupStateKey);
 
     } else {
       LOG.error("Timers should only be in event time!");
