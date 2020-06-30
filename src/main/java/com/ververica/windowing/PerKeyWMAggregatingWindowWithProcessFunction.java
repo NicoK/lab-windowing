@@ -212,7 +212,7 @@ public class PerKeyWMAggregatingWindowWithProcessFunction<Key, IN, OUT, ACC, ACC
 
     // if it exists, this is always a cleanup timer!
     windowState.remove(cleanupStateKey);
-    windowInfo.remove(windowEndStateKey);
+    windowInfo.remove(cleanupStateKey);
   }
 
   /** Emits the contents of the given window using the {@link InternalWindowFunction}. */
