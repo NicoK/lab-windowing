@@ -48,6 +48,7 @@ ext {
     log4jVersion = '1.2.17'
     junitVersion = '4.12'
     mockitoVersion = '2.21.0'
+    jmhVersion = '1.19'
 }
 
 
@@ -85,6 +86,22 @@ configurations {
     flinkShadowJar.exclude group: 'log4j'
 }
 
+// make compileOnly dependencies available for tests:
+sourceSets {
+    main.compileClasspath += configurations.flinkShadowJar
+    main.runtimeClasspath += configurations.flinkShadowJar
+
+    jmh {
+        compileClasspath += configurations.flinkShadowJar
+        runtimeClasspath += configurations.flinkShadowJar
+    }
+
+    test.compileClasspath += configurations.flinkShadowJar
+    test.runtimeClasspath += configurations.flinkShadowJar
+
+    javadoc.classpath += configurations.flinkShadowJar
+}
+
 // declare the dependencies for your production and test code
 dependencies {
     // --------------------------------------------------------------
@@ -95,6 +112,7 @@ dependencies {
     compile "org.apache.flink:flink-runtime-web_${scalaBinaryVersion}:${flinkVersion}"
     compile "org.apache.flink:flink-runtime_${scalaBinaryVersion}:${flinkVersion}"
     compile "org.apache.flink:flink-streaming-java_${scalaBinaryVersion}:${flinkVersion}"
+    compile "org.apache.flink:flink-statebackend-rocksdb_${scalaBinaryVersion}:${flinkVersion}"
 
     testCompile "org.apache.flink:flink-runtime_${scalaBinaryVersion}:${flinkVersion}:tests"
     testCompile "org.apache.flink:flink-streaming-java_${scalaBinaryVersion}:${flinkVersion}:tests"
@@ -102,19 +120,12 @@ dependencies {
     testCompile "junit:junit:${junitVersion}"
     testCompile "org.mockito:mockito-core:${mockitoVersion}"
 
+    jmhCompile project
+    jmhCompile "org.openjdk.jmh:jmh-core:${jmhVersion}"
+    jmhAnnotationProcessor "org.openjdk.jmh:jmh-generator-annprocess:${jmhVersion}"
+
     compile "log4j:log4j:${log4jVersion}"
     compile "org.slf4j:slf4j-log4j12:${slf4jVersion}"
-}
-
-// make compileOnly dependencies available for tests:
-sourceSets {
-    main.compileClasspath += configurations.flinkShadowJar
-    main.runtimeClasspath += configurations.flinkShadowJar
-
-    test.compileClasspath += configurations.flinkShadowJar
-    test.runtimeClasspath += configurations.flinkShadowJar
-
-    javadoc.classpath += configurations.flinkShadowJar
 }
 
 run.classpath = sourceSets.main.runtimeClasspath
@@ -136,4 +147,25 @@ publishing {
             from components.java
         }
     }
+}
+
+task jmh(type: JavaExec, description: 'Executing JMH benchmarks') {
+    classpath = sourceSets.jmh.runtimeClasspath
+    main = 'org.openjdk.jmh.Main'
+
+    def include = project.properties.get('include', '');
+    def format = project.properties.get('format', 'csv');
+    def resultFile = file("build/reports/jmh/result.${format}")
+    resultFile.parentFile.mkdirs()
+
+    // fail on error
+    args '-foe', 'true'
+    // speed up tests
+    args '-f', '1'
+    args '-i', '1'
+    args '-wi', '0'
+    // input/output
+    args include
+    args '-rf', format
+    args '-rff', resultFile
 }
