@@ -171,7 +171,7 @@ public class WindowWithProcessFunction<Key, IN, OUT> extends KeyedProcessFunctio
       // windows)
       long windowEndStateKey = regularEndTimeToStateKey(timestamp);
       long cleanupStateKey = cleanupTimeToStateKey(timestamp);
-      List<IN> currentState = windowState.get(windowEndStateKey);
+      Iterable<IN> currentState = windowState.get(windowEndStateKey);
       if (currentState != null) {
         emitWindowContents(out, windowInfo.get(windowEndStateKey), currentState, ctx);
 
@@ -192,7 +192,7 @@ public class WindowWithProcessFunction<Key, IN, OUT> extends KeyedProcessFunctio
 
   /** Emits the contents of the given window using the {@link InternalWindowFunction}. */
   private void emitWindowContents(
-      Collector<OUT> out, TimeWindow window, List<IN> contents, Context ctx) throws Exception {
+      Collector<OUT> out, TimeWindow window, Iterable<IN> contents, Context ctx) throws Exception {
     ((TimestampedCollector<OUT>) out).setAbsoluteTimestamp(window.maxTimestamp());
     windowProcessFunction.process(ctx.getCurrentKey(), window, contents, out);
   }
