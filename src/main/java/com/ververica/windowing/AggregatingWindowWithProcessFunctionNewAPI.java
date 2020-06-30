@@ -4,8 +4,7 @@ import static org.apache.flink.util.Preconditions.checkArgument;
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
 import java.util.Collection;
-import org.apache.flink.api.common.state.ListStateDescriptor;
-import org.apache.flink.api.common.state.TemporalListState;
+import java.util.Collections;
 import org.apache.flink.api.common.state.TemporalValueState;
 import org.apache.flink.api.common.state.ValueStateDescriptor;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
@@ -33,21 +32,23 @@ import org.slf4j.LoggerFactory;
 /**
  * @param <Key> The Type of the key.
  * @param <IN> The type of the values that are aggregated (input values)
+ * @param <ACC> The type of the accumulator (intermediate aggregate state).
  * @param <OUT> The type of the aggregated result
  */
-public class WindowWithProcessFunctionNewAPI<Key, IN, OUT>
+public class AggregatingWindowWithProcessFunctionNewAPI<Key, IN, OUT, ACC, ACC_OUT>
     extends KeyedProcessFunction<Key, IN, OUT> implements ResultTypeQueryable<OUT> {
 
-  private static final Logger LOG = LoggerFactory.getLogger(WindowWithProcessFunctionNewAPI.class);
+  private static final Logger LOG =
+      LoggerFactory.getLogger(AggregatingWindowWithProcessFunctionNewAPI.class);
 
-  private final TypeInformation<IN> inputType;
   private TypeInformation<OUT> producedType = null;
 
   private transient TemporalValueState<TimeWindow> windowInfo;
-  private transient TemporalListState<IN> windowState;
+  private transient TemporalValueState<ACC> windowState;
 
   private final WindowAssigner<Object, TimeWindow> windowAssigner;
-  private final ProcessWindowFunction<IN, OUT, Key> windowProcessFunction;
+  private final AggregateFunctionWithTypes<IN, ACC, ACC_OUT> windowAggregateFunction;
+  private final ProcessWindowFunction<ACC_OUT, OUT, Key> windowProcessFunction;
 
   private TriggerResult windowFireMode = TriggerResult.FIRE;
   /**
@@ -74,11 +75,10 @@ public class WindowWithProcessFunctionNewAPI<Key, IN, OUT>
 
   private transient WindowAssignerContext windowAssignerContext;
 
-  public WindowWithProcessFunctionNewAPI(
-      TypeInformation<IN> inputType,
+  public AggregatingWindowWithProcessFunctionNewAPI(
       WindowAssigner<Object, TimeWindow> windowAssigner,
-      ProcessWindowFunction<IN, OUT, Key> windowProcessFunction) {
-    this.inputType = inputType;
+      AggregateFunctionWithTypes<IN, ACC, ACC_OUT> windowAggregateFunction,
+      ProcessWindowFunction<ACC_OUT, OUT, Key> windowProcessFunction) {
     this.windowProcessFunction = windowProcessFunction;
 
     checkNotNull(windowAssigner);
@@ -91,6 +91,7 @@ public class WindowWithProcessFunctionNewAPI<Key, IN, OUT>
     checkArgument(windowAssigner.isEventTime(), "only event time supported");
 
     this.windowAssigner = windowAssigner;
+    this.windowAggregateFunction = checkNotNull(windowAggregateFunction);
   }
 
   @Override
@@ -114,16 +115,19 @@ public class WindowWithProcessFunctionNewAPI<Key, IN, OUT>
       long stateKey = windowToStateKey(window);
       windowState.setTime(stateKey);
       windowInfo.setTime(stateKey);
-      boolean firstInWindow = windowInfo.value() == null;
+      ACC stateEntry = windowState.value();
+      boolean firstInWindow = stateEntry == null;
       if (firstInWindow) {
+        stateEntry = windowAggregateFunction.createAccumulator();
         windowInfo.update(window);
       }
-      windowState.add(value);
+      stateEntry = windowAggregateFunction.add(value, stateEntry);
+      windowState.update(stateEntry);
 
       boolean cleanupTimerNeeded = firstInWindow && allowedLateness > 0;
       if (window.maxTimestamp() <= currentWatermark) {
         // event within allowed lateness
-        emitWindowContents(out, window, windowState.get(), ctx);
+        emitWindowContents(out, window, stateEntry, ctx);
 
         if (windowFireMode.isPurge()) {
           windowState.clear();
@@ -170,7 +174,7 @@ public class WindowWithProcessFunctionNewAPI<Key, IN, OUT>
       windowState.setTime(windowEndStateKey);
       windowInfo.setTime(windowEndStateKey);
       long cleanupStateKey = cleanupTimeToStateKey(timestamp);
-      Iterable<IN> currentState = windowState.get();
+      ACC currentState = windowState.value();
       if (currentState != null) {
         emitWindowContents(out, windowInfo.value(), currentState, ctx);
 
@@ -192,10 +196,12 @@ public class WindowWithProcessFunctionNewAPI<Key, IN, OUT>
   }
 
   /** Emits the contents of the given window using the {@link InternalWindowFunction}. */
-  private void emitWindowContents(
-      Collector<OUT> out, TimeWindow window, Iterable<IN> contents, Context ctx) throws Exception {
+  private void emitWindowContents(Collector<OUT> out, TimeWindow window, ACC contents, Context ctx)
+      throws Exception {
     ((TimestampedCollector<OUT>) out).setAbsoluteTimestamp(window.maxTimestamp());
-    windowProcessFunction.process(ctx.getCurrentKey(), window, contents, out);
+    ACC_OUT result = windowAggregateFunction.getResult(contents);
+    windowProcessFunction.process(
+        ctx.getCurrentKey(), window, Collections.singletonList(result), out);
   }
 
   /**
@@ -308,7 +314,9 @@ public class WindowWithProcessFunctionNewAPI<Key, IN, OUT>
                 new ValueStateDescriptor<>("WindowInfo", new TimeWindow.Serializer()));
     windowState =
         getRuntimeContext()
-            .getTemporalListState(new ListStateDescriptor<>("WindowState", inputType));
+            .getTemporalState(
+                new ValueStateDescriptor<>(
+                    "WindowAggregate", windowAggregateFunction.getAccumulatorType()));
   }
 
   private void setWindowContext(final Context ctx) {
@@ -324,13 +332,15 @@ public class WindowWithProcessFunctionNewAPI<Key, IN, OUT>
   }
 
   @SuppressWarnings({"unused", "UnusedReturnValue"})
-  public WindowWithProcessFunctionNewAPI<Key, IN, OUT> produces(TypeInformation<OUT> producedType) {
+  public AggregatingWindowWithProcessFunctionNewAPI<Key, IN, OUT, ACC, ACC_OUT> produces(
+      TypeInformation<OUT> producedType) {
     this.producedType = producedType;
     return this;
   }
 
   @SuppressWarnings({"unused", "UnusedReturnValue"})
-  public WindowWithProcessFunctionNewAPI<Key, IN, OUT> allowedLateness(Time lateness) {
+  public AggregatingWindowWithProcessFunctionNewAPI<Key, IN, OUT, ACC, ACC_OUT> allowedLateness(
+      Time lateness) {
     final long millis = lateness.toMilliseconds();
     checkArgument(millis >= 0, "The allowed lateness cannot be negative.");
 
@@ -339,14 +349,16 @@ public class WindowWithProcessFunctionNewAPI<Key, IN, OUT>
   }
 
   @SuppressWarnings({"unused", "UnusedReturnValue"})
-  public WindowWithProcessFunctionNewAPI<Key, IN, OUT> sideOutputLateData(OutputTag<IN> outputTag) {
+  public AggregatingWindowWithProcessFunctionNewAPI<Key, IN, OUT, ACC, ACC_OUT> sideOutputLateData(
+      OutputTag<IN> outputTag) {
     Preconditions.checkNotNull(outputTag, "Side output tag must not be null.");
     this.lateDataOutputTag = outputTag;
     return this;
   }
 
   @SuppressWarnings({"unused", "UnusedReturnValue"})
-  public WindowWithProcessFunctionNewAPI<Key, IN, OUT> triggerMode(TriggerResult windowFireMode) {
+  public AggregatingWindowWithProcessFunctionNewAPI<Key, IN, OUT, ACC, ACC_OUT> triggerMode(
+      TriggerResult windowFireMode) {
     checkArgument(
         windowFireMode == TriggerResult.FIRE || windowFireMode == TriggerResult.FIRE_AND_PURGE,
         "unsupported window fire mode: {}",

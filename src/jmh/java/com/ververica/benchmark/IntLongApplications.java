@@ -19,6 +19,7 @@
 package com.ververica.benchmark;
 
 import com.ververica.windowing.AggregatingWindowWithProcessFunction;
+import com.ververica.windowing.AggregatingWindowWithProcessFunctionNewAPI;
 import com.ververica.windowing.PassThroughWindowFunction;
 import com.ververica.windowing.WindowWithProcessFunction;
 import com.ververica.windowing.WindowWithProcessFunctionNewAPI;
@@ -55,12 +56,11 @@ public class IntLongApplications {
               new SumAggregateFunctionIntLong(),
               new PassThroughWindowFunction<IntegerLongSource.Record, Integer>() {});
     } else {
-      throw new UnsupportedOperationException();
-      //      windowWithProcessFunction =
-      //          new AggregatingWindowWithProcessFunctionNewAPI<>(
-      //              windowAssigner,
-      //              new SumAggregateFunctionIntLong(),
-      //              new PassThroughWindowFunction<IntegerLongSource.Record, Integer>() {});
+      windowWithProcessFunction =
+          new AggregatingWindowWithProcessFunctionNewAPI<>(
+              windowAssigner,
+              new SumAggregateFunctionIntLong(),
+              new PassThroughWindowFunction<IntegerLongSource.Record, Integer>() {});
     }
 
     source
