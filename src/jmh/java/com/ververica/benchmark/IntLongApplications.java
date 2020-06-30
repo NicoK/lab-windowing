@@ -41,9 +41,9 @@ public class IntLongApplications {
         .addSink(new CollectSink<>());
   }
 
-  public static <W extends Window> void reduceWithProcessFunctionAggregate(
+  public static void reduceWithProcessFunctionAggregate(
       DataStreamSource<IntegerLongSource.Record> source,
-      WindowAssigner<Object, W> windowAssigner,
+      WindowAssigner<Object, TimeWindow> windowAssigner,
       WindowWithProcessFunctionBenchmarks.StateAPI stateAPI) {
     final KeyedProcessFunction<Integer, IntegerLongSource.Record, IntegerLongSource.Record>
         windowWithProcessFunction;
@@ -51,16 +51,16 @@ public class IntLongApplications {
     if (stateAPI == WindowWithProcessFunctionBenchmarks.StateAPI.EXISTING) {
       windowWithProcessFunction =
           new AggregatingWindowWithProcessFunction<>(
-              TumblingEventTimeWindows.of(Time.milliseconds(10)),
+              windowAssigner,
               new SumAggregateFunctionIntLong(),
               new PassThroughWindowFunction<IntegerLongSource.Record, Integer>() {});
     } else {
       throw new UnsupportedOperationException();
       //      windowWithProcessFunction =
       //          new AggregatingWindowWithProcessFunctionNewAPI<>(
-      //              TumblingEventTimeWindows.of(Time.milliseconds(10)),
+      //              windowAssigner,
       //              new SumAggregateFunctionIntLong(),
-      //              new PassThroughWindowFunction<IntegerLongSource.Record, Integer>());
+      //              new PassThroughWindowFunction<IntegerLongSource.Record, Integer>() {});
     }
 
     source
