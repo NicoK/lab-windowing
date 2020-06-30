@@ -20,7 +20,6 @@ package com.ververica;
 
 import com.ververica.timestamps.BoundedOutOfOrderdnessPunctuatedWatermark;
 import com.ververica.windowing.CountAggregateWindowFunction;
-import com.ververica.windowing.WindowWithProcessFunction;
 import com.ververica.windowing.WindowWithProcessFunctionNewAPI;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.utils.ParameterTool;
@@ -36,7 +35,8 @@ import org.slf4j.LoggerFactory;
 
 public class NormalWatermarkingProcessWindowNewAPI {
 
-  private static final Logger LOG = LoggerFactory.getLogger(NormalWatermarkingProcessWindowNewAPI.class);
+  private static final Logger LOG =
+      LoggerFactory.getLogger(NormalWatermarkingProcessWindowNewAPI.class);
 
   public static void main(String[] args) throws Exception {
     ParameterTool tool = ParameterTool.fromArgs(args);
