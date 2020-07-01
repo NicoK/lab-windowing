@@ -70,7 +70,7 @@ public class WindowFunctionBenchmarks extends StateBackendBenchmarkBase {
 
   @State(Thread)
   public static class TimeWindowContext extends StateBackendContext {
-    @Param({"ROCKS_INC"})
+    @Param({"ROCKS_INC", "FS_ASYNC"})
     public StateBackend stateBackend = StateBackend.MEMORY;
 
     @Setup

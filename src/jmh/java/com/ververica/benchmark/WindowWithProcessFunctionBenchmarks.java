@@ -77,7 +77,7 @@ public class WindowWithProcessFunctionBenchmarks extends StateBackendBenchmarkBa
 
   @State(Thread)
   public static class TimeWindowContext extends StateBackendContext {
-    @Param({"ROCKS_INC"})
+    @Param({"ROCKS_INC", "FS_ASYNC"})
     public StateBackend stateBackend = StateBackend.MEMORY;
 
     @Param({"EXISTING", "TEMPORAL_STATE"})
