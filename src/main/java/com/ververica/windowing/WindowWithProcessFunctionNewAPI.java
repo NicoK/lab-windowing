@@ -112,22 +112,20 @@ public class WindowWithProcessFunctionNewAPI<Key, IN, OUT>
       isSkippedElement = false;
 
       long stateKey = windowToStateKey(window);
-      windowState.setTime(stateKey);
-      windowInfo.setTime(stateKey);
-      boolean firstInWindow = windowInfo.value() == null;
+      boolean firstInWindow = windowInfo.value(stateKey) == null;
       if (firstInWindow) {
-        windowInfo.update(window);
+        windowInfo.update(stateKey, window);
       }
-      windowState.add(value);
+      windowState.add(stateKey, value);
 
       boolean cleanupTimerNeeded = firstInWindow && allowedLateness > 0;
       if (window.maxTimestamp() <= currentWatermark) {
         // event within allowed lateness
-        emitWindowContents(out, window, windowState.get(), ctx);
+        emitWindowContents(out, window, windowState.get(stateKey), ctx);
 
         if (windowFireMode.isPurge()) {
-          windowState.clear();
-          windowInfo.clear();
+          windowState.clear(stateKey);
+          windowInfo.clear(stateKey);
         } else {
           cleanupTimerNeeded = firstInWindow;
         }
@@ -167,24 +165,20 @@ public class WindowWithProcessFunctionNewAPI<Key, IN, OUT>
       // a window end timer? (assume all windows have the same length - sliding and tumbling
       // windows)
       long windowEndStateKey = regularEndTimeToStateKey(timestamp);
-      windowState.setTime(windowEndStateKey);
-      windowInfo.setTime(windowEndStateKey);
-      long cleanupStateKey = cleanupTimeToStateKey(timestamp);
-      Iterable<IN> currentState = windowState.get();
+      Iterable<IN> currentState = windowState.get(windowEndStateKey);
       if (currentState != null) {
-        emitWindowContents(out, windowInfo.value(), currentState, ctx);
+        emitWindowContents(out, windowInfo.value(windowEndStateKey), currentState, ctx);
 
         if (windowFireMode.isPurge()) {
-          windowState.clear();
-          windowInfo.clear();
+          windowState.clear(windowEndStateKey);
+          windowInfo.clear(windowEndStateKey);
         }
       }
 
       // if it exists, this is always a cleanup timer!
-      windowState.setTime(cleanupStateKey);
-      windowState.clear();
-      windowInfo.setTime(cleanupStateKey);
-      windowInfo.clear();
+      long cleanupStateKey = cleanupTimeToStateKey(timestamp);
+      windowState.clear(cleanupStateKey);
+      windowInfo.clear(cleanupStateKey);
 
     } else {
       LOG.error("Timers should only be in event time!");
