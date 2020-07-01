@@ -159,11 +159,11 @@ task jmh(type: JavaExec, description: 'Executing JMH benchmarks') {
     resultFile.parentFile.mkdirs()
 
     // fail on error
-    args '-foe', 'true'
+//    args '-foe', 'true'
     // speed up tests
-    args '-f', '1'
-    args '-i', '1'
-    args '-wi', '0'
+//    args '-f', '1'
+//    args '-i', '1'
+//    args '-wi', '0'
     // input/output
     args include
     args '-rf', format
