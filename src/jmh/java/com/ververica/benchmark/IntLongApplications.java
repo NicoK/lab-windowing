@@ -23,6 +23,8 @@ import com.ververica.windowing.AggregatingWindowWithProcessFunctionNewAPI;
 import com.ververica.windowing.PassThroughWindowFunction;
 import com.ververica.windowing.WindowWithProcessFunction;
 import com.ververica.windowing.WindowWithProcessFunctionNewAPI;
+import com.ververica.windowing.WindowWithProcessFunctionNewAPI2;
+
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
 import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows;
@@ -91,10 +93,16 @@ public class IntLongApplications {
       windowWithProcessFunction =
           new WindowWithProcessFunction<>(
               source.getType(), windowAssigner, new SumWindowWithProcessFunctionIntLong());
-    } else {
+    } else if (stateAPI == WindowWithProcessFunctionBenchmarks.StateAPI.TEMPORAL_STATE) {
       windowWithProcessFunction =
           new WindowWithProcessFunctionNewAPI<>(
               source.getType(), windowAssigner, new SumWindowWithProcessFunctionIntLong());
+    } else if (stateAPI == WindowWithProcessFunctionBenchmarks.StateAPI.TEMPORAL_STATE_NO_TIMER_CONTEXT) {
+      windowWithProcessFunction =
+              new WindowWithProcessFunctionNewAPI2<>(
+                      source.getType(), windowAssigner, new SumWindowWithProcessFunctionIntLong());
+    } else {
+      throw new UnsupportedOperationException("Unknown state API: " + stateAPI);
     }
 
     source

@@ -72,7 +72,8 @@ public class WindowWithProcessFunctionBenchmarks extends StateBackendBenchmarkBa
 
   public enum StateAPI {
     EXISTING,
-    TEMPORAL_STATE
+    TEMPORAL_STATE,
+    TEMPORAL_STATE_NO_TIMER_CONTEXT
   }
 
   @State(Thread)
@@ -80,7 +81,7 @@ public class WindowWithProcessFunctionBenchmarks extends StateBackendBenchmarkBa
     @Param({"ROCKS_INC", "FS_ASYNC"})
     public StateBackend stateBackend = StateBackend.MEMORY;
 
-    @Param({"EXISTING", "TEMPORAL_STATE"})
+    @Param({"EXISTING", "TEMPORAL_STATE", "TEMPORAL_STATE_NO_TIMER_CONTEXT"})
     public StateAPI stateAPI = StateAPI.TEMPORAL_STATE;
 
     @Setup
